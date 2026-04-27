@@ -14,7 +14,9 @@ namespace myModbusPolLV1
         {
             InitializeComponent();
         }
-
+        // Efficiency variables
+        float instant_flow = 0.0f;
+        int energy = 0;
         private void Form1_Load(object sender, EventArgs e)
         {
             write2LabelFromSubprocess(label4, "COMM STATUS: IDLE");
@@ -28,8 +30,6 @@ namespace myModbusPolLV1
 
         private void button2_Click(object sender, EventArgs e) // conecta a sensor de flujo
         {
-            Thread subproces = new Thread(Connect2SensorFlow);
-            subproces.Start();
         }
 
         private void button3_Click(object sender, EventArgs e) // Conecta a sensor de presión
@@ -114,55 +114,61 @@ namespace myModbusPolLV1
             }
         }
 
-        private void setCommOk()
+        private void setCommOk(
+            Label label_comm, Label label_status, Label label_alarm,
+            Panel panel_comm, Panel panel_status, Panel panel_alarm,
+            ref DateTime lastValidResponseTimeSensor)
         {
-            lastValidResponseTime = DateTime.Now;
-            dataIsValid = true;
+            lastValidResponseTimeSensor = DateTime.Now;
 
-            write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTED");
-            write2LabelFromSubprocess(label5, "DATA STATUS: VALID");
-            write2LabelFromSubprocess(label6, "ALARM: NONE");
+            write2LabelFromSubprocess(label_comm, "COMM STATUS: CONNECTED");
+            write2LabelFromSubprocess(label_status, "DATA STATUS: VALID");
+            write2LabelFromSubprocess(label_alarm, "ALARM: NONE");
 
-            setPanelColorFromSubprocess(panel1, Color.LimeGreen);
-            setPanelColorFromSubprocess(panel2, Color.LimeGreen);
-            setPanelColorFromSubprocess(panel3, Color.LimeGreen);
+            setPanelColorFromSubprocess(panel_comm, Color.LimeGreen);
+            setPanelColorFromSubprocess(panel_status, Color.LimeGreen);
+            setPanelColorFromSubprocess(panel_alarm, Color.LimeGreen);
         }
 
-        private void setWaitingResponse()
+        private void setWaitingResponse(
+            Label label_comm, Label label_status, Label label_alarm,
+            Panel panel_comm, Panel panel_status, Panel panel_alarm)
         {
-            write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTED");
-            write2LabelFromSubprocess(label5, "DATA STATUS: WAITING RESPONSE");
-            write2LabelFromSubprocess(label6, "ALARM: NONE");
+            write2LabelFromSubprocess(label_comm, "COMM STATUS: CONNECTED");
+            write2LabelFromSubprocess(label_status, "DATA STATUS: WAITING RESPONSE");
+            write2LabelFromSubprocess(label_alarm, "ALARM: NONE");
 
-            setPanelColorFromSubprocess(panel1, Color.LimeGreen);
-            setPanelColorFromSubprocess(panel2, Color.Gold);
-            setPanelColorFromSubprocess(panel3, Color.LimeGreen);
+            setPanelColorFromSubprocess(panel_comm, Color.LimeGreen);
+            setPanelColorFromSubprocess(panel_status, Color.Gold);
+            setPanelColorFromSubprocess(panel_alarm, Color.LimeGreen);
         }
 
-        private void setCommLost(string message = "ALARM: COMMUNICATION LOST")
+        private void setCommLost(
+            Label label_comm, Label label_status, Label label_alarm,
+            Panel panel_comm, Panel panel_status, Panel panel_alarm,
+            string message = "ALARM: COMMUNICATION LOST")
         {
-            dataIsValid = false;
+            write2LabelFromSubprocess(label_comm, "COMM STATUS: DISCONNECTED");
+            write2LabelFromSubprocess(label_status, "DATA STATUS: STALE");
+            write2LabelFromSubprocess(label_alarm, message);
 
-            write2LabelFromSubprocess(label4, "COMM STATUS: DISCONNECTED");
-            write2LabelFromSubprocess(label5, "DATA STATUS: STALE");
-            write2LabelFromSubprocess(label6, message);
-
-            setPanelColorFromSubprocess(panel1, Color.Red);
-            setPanelColorFromSubprocess(panel2, Color.Red);
-            setPanelColorFromSubprocess(panel3, Color.Red);
+            setPanelColorFromSubprocess(panel_comm, Color.Red);
+            setPanelColorFromSubprocess(panel_status, Color.Red);
+            setPanelColorFromSubprocess(panel_alarm, Color.Red);
         }
 
-        private void setInvalidFrame(string message = "ALARM: INVALID MODBUS FRAME")
+        private void setInvalidFrame(
+            Label label_comm, Label label_status, Label label_alarm,
+            Panel panel_comm, Panel panel_status, Panel panel_alarm,
+            string message = "ALARM: INVALID MODBUS FRAME")
         {
-            dataIsValid = false;
+            write2LabelFromSubprocess(label_comm, "COMM STATUS: CONNECTED");
+            write2LabelFromSubprocess(label_status, "DATA STATUS: INVALID");
+            write2LabelFromSubprocess(label_alarm, message);
 
-            write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTED");
-            write2LabelFromSubprocess(label5, "DATA STATUS: INVALID");
-            write2LabelFromSubprocess(label6, message);
-
-            setPanelColorFromSubprocess(panel1, Color.LimeGreen);
-            setPanelColorFromSubprocess(panel2, Color.Orange);
-            setPanelColorFromSubprocess(panel3, Color.Red);
+            setPanelColorFromSubprocess(panel_comm, Color.LimeGreen);
+            setPanelColorFromSubprocess(panel_status, Color.Orange);
+            setPanelColorFromSubprocess(panel_alarm, Color.Red);
         }
 
         private void invalidateDisplayedData()
@@ -172,24 +178,33 @@ namespace myModbusPolLV1
             write2LabelFromSubprocess(label3, "The flow is ---");
         }
 
-        private void checkCommunicationTimeout()
+        private void checkCommunicationTimeout(
+            bool keepConnectionSensor,
+            DateTime lastValidResponseTimeSensor,
+            Label label_comm, Label label_status, Label label_alarm,
+            Panel panel_comm, Panel panel_status, Panel panel_alarm,
+            string sensorName)
         {
-            if (!keepConnectionFlow && !keepConnectionPower && !keepConnectionWaterPump && !keepConnection)
-                return;
+            if (!keepConnectionSensor) return;
 
-            if (lastValidResponseTime == DateTime.MinValue)
+            if (lastValidResponseTimeSensor == DateTime.MinValue)
             {
-                setCommLost("ALARM: NO VALID RESPONSE YET");
-                invalidateDisplayedData();
+                setCommLost(
+                    label_comm, label_status, label_alarm,
+                    panel_comm, panel_status, panel_alarm,
+                    $"ALARM: {sensorName} NO VALID RESPONSE YET");
+
                 return;
             }
 
-            double elapsedMs = (DateTime.Now - lastValidResponseTime).TotalMilliseconds;
+            double elapsedMs = (DateTime.Now - lastValidResponseTimeSensor).TotalMilliseconds;
 
             if (elapsedMs > commTimeoutMs)
             {
-                setCommLost("ALARM: SENSOR TIMEOUT");
-                invalidateDisplayedData();
+                setCommLost(
+                    label_comm, label_status, label_alarm,
+                    panel_comm, panel_status, panel_alarm,
+                    $"ALARM: {sensorName} TIMEOUT");
             }
         }
 
@@ -212,19 +227,28 @@ namespace myModbusPolLV1
         bool keepConnection = false;
 
 
-        DateTime lastValidResponseTime = DateTime.MinValue;
-        bool dataIsValid = false;
-        int commTimeoutMs = 3000; // 3 seconds without valid response = communication lost
+        DateTime lastValidResponseTimeFlow = DateTime.MinValue;
+        DateTime lastValidResponseTimePower = DateTime.MinValue;
+        DateTime lastValidResponseTimePressure = DateTime.MinValue;
+        DateTime lastValidResponseTimeWaterPump = DateTime.MinValue;
+
+        int commTimeoutMs = 3000;
 
         private void AutomaticRequestFlow()
         {
             while (keepConnectionFlow)
             {
-                setWaitingResponse();
+                setWaitingResponse(label4, label5, label6, panel1, panel2, panel3);
                 sendMessageTCPFlow();
 
                 Thread.Sleep(1000);
-                checkCommunicationTimeout();
+
+                checkCommunicationTimeout(
+                    keepConnectionFlow,
+                    lastValidResponseTimeFlow,
+                    label4, label5, label6,
+                    panel1, panel2, panel3,
+                    "FLOW SENSOR");
             }
         }
 
@@ -247,7 +271,7 @@ namespace myModbusPolLV1
 
             while (keepConnectionPower)
             {
-                setWaitingResponse();
+                setWaitingResponse(label9, label10, label11, panel4, panel5, panel6);
 
                 if (requestingPower)
                 {
@@ -263,19 +287,30 @@ namespace myModbusPolLV1
                 requestingPower = !requestingPower;
 
                 Thread.Sleep(1000);
-                checkCommunicationTimeout();
+
+                checkCommunicationTimeout(
+                    keepConnectionPower,
+                    lastValidResponseTimePower,
+                    label9, label10, label11,
+                    panel4, panel5, panel6,
+                    "POWER SENSOR");
             }
         }
         private void AutomaticRequestWaterPump()
         {
             while (keepConnectionWaterPump)
             {
-                setWaitingResponse();
-                //sendMessageRTUoTCP();
+                setWaitingResponse(label15, label16, label17, panel10, panel11, panel12);
                 sendMessageWaterPump();
 
                 Thread.Sleep(1000);
-                checkCommunicationTimeout();
+
+                checkCommunicationTimeout(
+                    keepConnectionWaterPump,
+                    lastValidResponseTimeWaterPump,
+                    label15, label16, label17,
+                    panel10, panel11, panel12,
+                    "WATER PUMP");
             }
         }
         private bool processTCPresponseFlow(byte[] buffer)
@@ -309,8 +344,8 @@ namespace myModbusPolLV1
                                 newArray[1] = buffer[11];         // Transformar Big Endian to Float
                                 newArray[2] = buffer[10];        //
                                 newArray[3] = buffer[9];       //
-                                float instant_flow = BitConverter.ToSingle(newArray, 0);
-                                write2LabelFromSubprocess(label1, $"The Instant Flow is {instant_flow} [lps]");
+                                instant_flow = BitConverter.ToSingle(newArray, 0);
+                                write2LabelFromSubprocess(label22, $"The Instant Flow is {instant_flow} [lps]");
 
 
                                 newArray[0] = buffer[16];          //
@@ -318,36 +353,36 @@ namespace myModbusPolLV1
                                 newArray[2] = buffer[14];        //
                                 newArray[3] = buffer[13];       //
                                 float totalizer = BitConverter.ToSingle(newArray, 0);
-                                write2LabelFromSubprocess(label7, $"The Totalizer is {totalizer} [m^3]");
+                                write2LabelFromSubprocess(label21, $"The Totalizer is {totalizer} [m^3]");
 
-                                setCommOk();
+                                setCommOk(label4, label5, label6, panel1, panel2, panel3, ref lastValidResponseTimeFlow);
+                                calculatePumpEfficiency();
                                 return true;
                             }
                             else
                             {
-                                setInvalidFrame("ALARM: WRONG DATA LENGTH");
+                                setInvalidFrame(label4, label5, label6, panel1, panel2, panel3, "ALARM: FLOW WRONG DATA LENGTH");
                             }
                         }
                         else
                         {
-                            setInvalidFrame("ALARM: WRONG FUNCTION");
+                            setInvalidFrame(label4, label5, label6, panel1, panel2, panel3, "ALARM: WRONG FUNCTION");
                         }
                     }
                     else
                     {
-                        setInvalidFrame("ALARM: WRONG MODBUS ID");
+                        setInvalidFrame(label4, label5, label6, panel1, panel2, panel3, "ALARM: WRONG MODBUS ID");
                     }
                 }
                 else
                 {
-                    setInvalidFrame("ALARM: WRONG TCP LENGTH");
+                    setInvalidFrame(label4, label5, label6, panel1, panel2, panel3, "ALARM: WRONG TCP LENGTH");
                 }
             }
             else
             {
-                setInvalidFrame("ALARM: WRONG PROTOCOL ID");
+                setInvalidFrame(label4, label5, label6, panel1, panel2, panel3, "ALARM: WRONG PROTOCOL ID");
             }
-
             return result;
         }
         private bool processRTUoTCPresponsePower(byte[] buffer, int bytesReceived)
@@ -377,27 +412,27 @@ namespace myModbusPolLV1
 
                             write2LabelFromSubprocess(label3, $"The Power is {power} [kW]");
 
-                            setCommOk();
+                            setCommOk(label9, label10, label11, panel4, panel5, panel6, ref lastValidResponseTimePower);
                             return true;
                         }
                         else
                         {
-                            setInvalidFrame("ALARM: WRONG POWER DATA LENGTH");
+                            setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: POWER WRONG CRC");
                         }
                     }
                     else
                     {
-                        setInvalidFrame("ALARM: WRONG POWER FUNCTION");
+                        setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: WRONG POWER FUNCTION");
                     }
                 }
                 else
                 {
-                    setInvalidFrame("ALARM: WRONG POWER MODBUS ID");
+                    setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: WRONG POWER MODBUS ID");
                 }
             }
             else
             {
-                setInvalidFrame("ALARM: WRONG POWER CRC");
+                setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: WRONG POWER CRC");
             }
 
             return result;
@@ -425,33 +460,33 @@ namespace myModbusPolLV1
 
                             // Energy: Int32 little endian
                             // RTU response data starts at buffer[3]
-                            int energy = BitConverter.ToInt32(buffer, 3);
+                            energy = BitConverter.ToInt32(buffer, 3);
 
                             write2LabelFromSubprocess(label8, $"The Energy is {energy} [kWh]");
 
-                            setCommOk();
+                            setCommOk(label9, label10, label11, panel4, panel5, panel6, ref lastValidResponseTimePower);
+                            calculatePumpEfficiency();
                             return true;
                         }
                         else
                         {
-                            setInvalidFrame("ALARM: WRONG ENERGY DATA LENGTH");
+                            setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: Energy WRONG CRC");
                         }
                     }
                     else
                     {
-                        setInvalidFrame("ALARM: WRONG ENERGY FUNCTION");
+                        setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: WRONG ENERGY FUNCTION");
                     }
                 }
                 else
                 {
-                    setInvalidFrame("ALARM: WRONG ENERGY MODBUS ID");
+                    setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: WRONG ENERGY MODBUS ID");
                 }
             }
             else
             {
-                setInvalidFrame("ALARM: WRONG ENERGY CRC");
+                setInvalidFrame(label9, label10, label11, panel4, panel5, panel6, "ALARM: WRONG ENERGY CRC");
             }
-
             return result;
         }
         private bool processRTUresponsePressure(byte[] buffer, int bytesReceived)
@@ -483,6 +518,7 @@ namespace myModbusPolLV1
                                     newArray[3] = buffer[7];       //
                                     float Preassure = BitConverter.ToSingle(newArray, 0);
                                     write2LabelFromSubprocess(label2, $"The preassure is {Preassure} [kg/cm²]");
+                                    setCommOk(label12, label13, label14, panel7, panel8, panel9, ref lastValidResponseTimePressure);
                                 }
                             }
                         }
@@ -491,11 +527,27 @@ namespace myModbusPolLV1
             }
             return result;
         }
+
+        private void calculatePumpEfficiency()
+        {
+            if (energy != 0) // avoid division by zero
+            {
+                float pump_efficiency = instant_flow / energy;
+
+                write2LabelFromSubprocess(label27,
+                    $"Pump Efficiency: {pump_efficiency * 100:F1} %");
+            }
+            else
+            {
+                write2LabelFromSubprocess(label27,
+                    "Pump Efficiency: ---");
+            }
+        }
         private void Connect2SensorFlow()
         {
             try
             {
-                disableButtonFromSubprocess(button2);
+                disableButtonFromSubprocess(button1);
 
                 write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTING...");
                 write2LabelFromSubprocess(label5, "DATA STATUS: NO DATA");
@@ -510,8 +562,8 @@ namespace myModbusPolLV1
                 if (clientFlow.Connected)
                 {
                     keepConnectionFlow = true;
-                    lastValidResponseTime = DateTime.MinValue;
-                    dataIsValid = false;
+                    lastValidResponseTimeFlow = DateTime.MinValue;
+                    //dataIsValidFlow = false;
 
                     write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTED TO FLOW SENSOR");
                     setPanelColorFromSubprocess(panel1, Color.LimeGreen);
@@ -533,7 +585,7 @@ namespace myModbusPolLV1
 
                             if (bytesRead == 0)
                             {
-                                setCommLost("ALARM: SERVER DISCONNECTED");
+                                setCommLost(label4, label5, label6, panel1, panel2, panel3, "ALARM: SERVER DISCONNECTED");
                                 break;
                             }
                             else
@@ -543,27 +595,27 @@ namespace myModbusPolLV1
 
                                 if (!valid)
                                 {
-                                    checkCommunicationTimeout();
+                                    checkCommunicationTimeout(keepConnectionFlow, lastValidResponseTimeFlow, label4, label5, label6, panel1, panel2, panel3, "FLOW");
                                 }
                             }
                         }
                         catch (IOException)
                         {
-                            checkCommunicationTimeout();
+                            checkCommunicationTimeout(keepConnectionFlow, lastValidResponseTimeFlow, label4, label5, label6, panel1, panel2, panel3, "FLOW");
                         }
                     }
                 }
                 else
                 {
                     write2TextboxFromSubprocess(richTextBox1, "connection failed");
-                    setCommLost("ALARM: CONNECTION FAILED");
+                    setCommLost(label4, label5, label6, panel1, panel2, panel3, "ALARM: CONNECTION FAILED");
                     invalidateDisplayedData();
                 }
             }
             catch (Exception ex)
             {
                 write2TextboxFromSubprocess(richTextBox1, ex.ToString());
-                setCommLost("ALARM: EXCEPTION IN CLIENT");
+                setCommLost(label4, label5, label6, panel1, panel2, panel3, "ALARM: EXCEPTION IN CLIENT");
                 invalidateDisplayedData();
             }
             finally
@@ -577,7 +629,7 @@ namespace myModbusPolLV1
                     clientFlow.Close();
                 }
 
-                enableButtonFromSubprocess(button2);
+                enableButtonFromSubprocess(button1);
             }
         }
 
@@ -587,24 +639,24 @@ namespace myModbusPolLV1
             {
                 disableButtonFromSubprocess(button4);
 
-                write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTING...");
-                write2LabelFromSubprocess(label5, "DATA STATUS: NO DATA");
-                write2LabelFromSubprocess(label6, "ALARM: NONE");
+                write2LabelFromSubprocess(label9, "COMM STATUS: CONNECTING...");
+                write2LabelFromSubprocess(label10, "DATA STATUS: NO DATA");
+                write2LabelFromSubprocess(label11, "ALARM: NONE");
 
-                setPanelColorFromSubprocess(panel1, Color.Gold);
-                setPanelColorFromSubprocess(panel2, Color.LightGray);
-                setPanelColorFromSubprocess(panel3, Color.LightGray);
+                setPanelColorFromSubprocess(panel4, Color.Gold);
+                setPanelColorFromSubprocess(panel5, Color.LightGray);
+                setPanelColorFromSubprocess(panel6, Color.LightGray);
 
                 clientPower = new TcpClient("127.0.0.1", 504);
 
                 if (clientPower.Connected)
                 {
                     keepConnectionPower = true;
-                    lastValidResponseTime = DateTime.MinValue;
-                    dataIsValid = false;
+                    lastValidResponseTimePower = DateTime.MinValue;
+                    //dataIsValid = false;
 
-                    write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTED TO POWER SENSOR");
-                    setPanelColorFromSubprocess(panel1, Color.LimeGreen);
+                    write2LabelFromSubprocess(label9, "COMM STATUS: CONNECTED TO POWER SENSOR");
+                    setPanelColorFromSubprocess(panel4, Color.LimeGreen);
 
                     Thread pollingSubprocess = new Thread(AutomaticRequestPower);
                     pollingSubprocess.Start();
@@ -623,7 +675,7 @@ namespace myModbusPolLV1
 
                             if (bytesRead == 0)
                             {
-                                setCommLost("ALARM: POWER SENSOR DISCONNECTED");
+                                setCommLost(label9, label10, label11, panel4, panel5, panel6, "ALARM: DISCONNECTED");
                                 break;
                             }
 
@@ -642,26 +694,26 @@ namespace myModbusPolLV1
 
                             if (!valid)
                             {
-                                checkCommunicationTimeout();
+                                checkCommunicationTimeout(keepConnectionPower, lastValidResponseTimePower, label9, label10, label11, panel4, panel5, panel6, "POWER");
                             }
                         }
                         catch (IOException)
                         {
-                            checkCommunicationTimeout();
+                            checkCommunicationTimeout(keepConnectionPower, lastValidResponseTimePower, label9, label10, label11, panel4, panel5, panel6, "POWER");
                         }
                     }
                 }
                 else
                 {
                     write2TextboxFromSubprocess(richTextBox1, "Power sensor connection failed");
-                    setCommLost("ALARM: POWER SENSOR CONNECTION FAILED");
+                    setCommLost(label9, label10, label11, panel4, panel5, panel6, "ALARM: POWER SENSOR CONNECTION FAILED");
                     invalidateDisplayedData();
                 }
             }
             catch (Exception ex)
             {
                 write2TextboxFromSubprocess(richTextBox1, ex.ToString());
-                setCommLost("ALARM: EXCEPTION IN POWER CLIENT");
+                setCommLost(label9, label10, label11, panel4, panel5, panel6, "ALARM: EXCEPTION IN POWER CLIENT");
                 invalidateDisplayedData();
             }
             finally
@@ -685,24 +737,24 @@ namespace myModbusPolLV1
             {
                 disableButtonFromSubprocess(button5);
 
-                write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTING...");
-                write2LabelFromSubprocess(label5, "DATA STATUS: NO DATA");
-                write2LabelFromSubprocess(label6, "ALARM: NONE");
+                write2LabelFromSubprocess(label15, "COMM STATUS: CONNECTING...");
+                write2LabelFromSubprocess(label16, "DATA STATUS: NO DATA");
+                write2LabelFromSubprocess(label17, "ALARM: NONE");
 
-                panel1.BackColor = Color.Gold;
-                panel2.BackColor = Color.LightGray;
-                panel3.BackColor = Color.LightGray;
+                panel10.BackColor = Color.Gold;
+                panel11.BackColor = Color.LightGray;
+                panel12.BackColor = Color.LightGray;
 
                 clientWaterPump = new TcpClient("127.0.0.1", 505);
 
                 if (clientWaterPump.Connected)
                 {
                     keepConnectionWaterPump = true;
-                    lastValidResponseTime = DateTime.MinValue;
-                    dataIsValid = false;
+                    lastValidResponseTimeWaterPump = DateTime.MinValue;
+                    //dataIsValid = false;
 
-                    write2LabelFromSubprocess(label4, "COMM STATUS: CONNECTED TO WATER PUMP");
-                    setPanelColorFromSubprocess(panel1, Color.LimeGreen);
+                    write2LabelFromSubprocess(label15, "COMM STATUS: CONNECTED TO WATER PUMP");
+                    setPanelColorFromSubprocess(panel10, Color.LimeGreen);
 
                     Thread pollingSubprocess = new Thread(AutomaticRequestWaterPump);
                     pollingSubprocess.Start();
@@ -721,7 +773,7 @@ namespace myModbusPolLV1
 
                             if (bytesRead == 0)
                             {
-                                setCommLost("ALARM: SERVER DISCONNECTED");
+                                setCommLost(label15, label16, label17, panel10, panel11, panel12, "ALARM: SERVER DISCONNECTED");
                                 break;
                             }
                             else
@@ -731,27 +783,27 @@ namespace myModbusPolLV1
 
                                 if (!valid)
                                 {
-                                    checkCommunicationTimeout();
+                                    checkCommunicationTimeout(keepConnectionWaterPump, lastValidResponseTimeWaterPump, label15, label16, label17, panel10, panel11, panel12, "FLOW");
                                 }
                             }
                         }
                         catch (IOException)
                         {
-                            checkCommunicationTimeout();
+                            checkCommunicationTimeout(keepConnectionWaterPump, lastValidResponseTimeWaterPump, label15, label16, label17, panel10, panel11, panel12, "FLOW");
                         }
                     }
                 }
                 else
                 {
                     write2TextboxFromSubprocess(richTextBox1, "connection failed");
-                    setCommLost("ALARM: CONNECTION FAILED");
+                    setCommLost(label15, label16, label17, panel10, panel11, panel12, "ALARM: CONNECTION FAILED");
                     invalidateDisplayedData();
                 }
             }
             catch (Exception ex)
             {
                 write2TextboxFromSubprocess(richTextBox1, ex.ToString());
-                setCommLost("ALARM: EXCEPTION IN CLIENT");
+                setCommLost(label15, label16, label17, panel10, panel11, panel12, "ALARM: EXCEPTION IN CLIENT");
                 invalidateDisplayedData();
             }
             finally
@@ -873,14 +925,12 @@ namespace myModbusPolLV1
             serialPort1.Write(bytes2send, 0, 8);
             serialPort1.BaseStream.Flush();
         }
-        private void sendMessageRTUoTCPPower(/*RichTextBox textBox*/)
+        private void sendMessageRTUoTCPPower()
         {
             if (UIavilable && clientPower != null && clientPower.Connected)
             {
-                //string message = textBox.Text;
-                //clearTextboxFromSubprocess(textBox);
-
                 NetworkStream stream = clientPower.GetStream();
+
                 byte[] bytes2send = new byte[8];
                 bytes2send[0] = ModbusID_Power;
                 bytes2send[1] = Function_Power;
@@ -888,10 +938,10 @@ namespace myModbusPolLV1
                 bytes2send[3] = (byte)(Address_Power);
                 bytes2send[4] = (byte)(RegQty_Power >> 8);
                 bytes2send[5] = (byte)(RegQty_Power);
+
                 Int16 CRC = crcObject.ComputeCRC(bytes2send, 6);
                 bytes2send[6] = (byte)(CRC >> 8);
                 bytes2send[7] = (byte)(CRC);
-                //byte[] bytes2send = Encoding.UTF8.GetBytes(message);
 
                 stream.Write(bytes2send);
             }
@@ -946,7 +996,6 @@ namespace myModbusPolLV1
         private void disconnectClient()
         {
             keepConnection = false;
-            setCommLost("ALARM: CLIENT STOPPED");
             invalidateDisplayedData();
         }
 
@@ -954,47 +1003,47 @@ namespace myModbusPolLV1
         private TcpListener server = null;
         private List<TcpClient> clients = new List<TcpClient> { };
         bool keepConnections = true;
-        private void ListenConnections()
-        {
-            try
-            {
-                server = new TcpListener(IPAddress.Any, 10001);
-                server.Start();
-                keepConnections = true;
-                disableButtonFromSubprocess(button1);
-                // Check if there's a pending connection before accepting
-                while (keepConnections)
-                {
-                    if (server.Pending())
-                    {
-                        TcpClient client = server.AcceptTcpClient();
-                        Thread clientTask = new Thread(new ParameterizedThreadStart(HandleMessages));
-                        clients.Add(client);
-                        clientTask.Start(client);
-                    }
-                    else
-                    {
-                        Thread.Sleep(100); // Sleep briefly to avoid high CPU usage
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                write2TextboxFromSubprocess(richTextBox1, "Connection ERROR: " + ex.Message);
-            }
-            //finally
-            try
-            {
-                Thread.Sleep(1000);//allow disconnections
-                clients.Clear();
-                if (server != null) server.Stop();
-                enableButtonFromSubprocess(button1);
-            }
-            catch (Exception ex)
-            {
-                write2TextboxFromSubprocess(richTextBox1, "Disconnect ERROR:" + ex.Message);
-            }
-        }
+        //private void ListenConnections()
+        //{
+        //    try
+        //    {
+        //        server = new TcpListener(IPAddress.Any, 10001);
+        //        server.Start();
+        //        keepConnections = true;
+        //        disableButtonFromSubprocess(button1);
+        //        // Check if there's a pending connection before accepting
+        //        while (keepConnections)
+        //        {
+        //            if (server.Pending())
+        //            {
+        //                TcpClient client = server.AcceptTcpClient();
+        //                Thread clientTask = new Thread(new ParameterizedThreadStart(HandleMessages));
+        //                clients.Add(client);
+        //                clientTask.Start(client);
+        //            }
+        //            else
+        //            {
+        //                Thread.Sleep(100); // Sleep briefly to avoid high CPU usage
+        //            }
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        write2TextboxFromSubprocess(richTextBox1, "Connection ERROR: " + ex.Message);
+        //    }
+        //    //finally
+        //    try
+        //    {
+        //        Thread.Sleep(1000);//allow disconnections
+        //        clients.Clear();
+        //        if (server != null) server.Stop();
+        //        enableButtonFromSubprocess(button1);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        write2TextboxFromSubprocess(richTextBox1, "Disconnect ERROR:" + ex.Message);
+        //    }
+        //}
         private void HandleMessages(object obj)
         {
             write2TextboxFromSubprocess(richTextBox1, "New client");
@@ -1042,18 +1091,22 @@ namespace myModbusPolLV1
 
             if (clientFlow != null)
             {
+                setCommLost(label4, label5, label6, panel1, panel2, panel3, "ALARM: CLIENT STOPPED");
                 clientFlow.Close();
             }
             if (clientPressure != null)
             {
+                setCommLost(label9, label10, label11, panel4, panel5, panel6, "ALARM: CLIENT STOPPED");
                 clientPressure.Close();
             }
             if (clientPower != null)
             {
+                setCommLost(label12, label13, label14, panel7, panel8, panel9, "ALARM: CLIENT STOPPED");
                 clientPower.Close();
             }
             if (clientWaterPump != null)
             {
+                setCommLost(label15, label16, label17, panel10, panel11, panel12, "ALARM: CLIENT STOPPED");
                 clientWaterPump.Close();
             }
         }
@@ -1179,6 +1232,22 @@ namespace myModbusPolLV1
         private void label4_Click(object sender, EventArgs e)
         {
 
+        }
+
+        private void label18_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void label19_Click(object sender, EventArgs e)
+        {
+
+        }
+
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+            Thread subproces = new Thread(Connect2SensorFlow);
+            subproces.Start();
         }
     }
 }
